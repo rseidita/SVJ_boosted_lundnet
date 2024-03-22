@@ -10,8 +10,29 @@ import vector
 import logging
 from LundTreeUtilities import tensor_to_tree, prune_tree, tree_to_tensor
 import torch.multiprocessing as tmp
+import pyxrootd.client
+from urllib.parse import urlparse
 
 torch.multiprocessing.set_sharing_strategy('file_system')
+
+def mt(event):
+    """
+    Calculates the transverse mass MT and RT (closely related calcs)
+    """
+    met_x = np.cos(event.METPhi) * event.MET
+    met_y = np.sin(event.METPhi) * event.MET
+    jet_phi = event["JetsAK15/JetsAK15.fCoordinates.fPhi"][1]
+    jet_pt = event["JetsAK15/JetsAK15.fCoordinates.fPt"][1]
+    jet_e = event["JetsAK15/JetsAK15.fCoordinates.fE"][1]
+    jet_x = np.cos(jet_phi) * jet_pt
+    jet_y = np.sin(jet_phi) * jet_pt
+    # jet_e = np.sqrt(jets.mass2 + jets.pt**2)
+    # m^2 + pT^2 = E^2 - pT^2 - pz^2 + pT^2 = E^2 - pz^2
+    pz = jet_pt * np.sinh(event["JetsAK15/JetsAK15.fCoordinates.fEta"][1])
+    transverse_e = np.sqrt(jet_e**2 - pz**2)
+    mt = np.sqrt( (transverse_e + event.MET)**2 - (jet_x + met_x)**2 - (jet_y + met_y)**2 )
+
+    return mt
 
 def get_lund_decomp(
         pt,
@@ -327,7 +348,26 @@ class JetGraphProducer(InMemoryDataset):
 
     @property
     def raw_file_names(self):
-        return [self.root + "/" + f for f in os.listdir(self.root) if f.endswith(".root")]
+        #return [self.root + "/" + f for f in os.listdir(self.root) if f.endswith(".root")]
+
+        # Parse the input EOS directory URL
+        parsed_url = urlparse(self.root)
+        xrootd_endpoint = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        eos_directory = "/" + parsed_url.path.strip('/')  # Remove leading and trailing slashes
+
+        # Create a XRootD client
+        client = pyxrootd.client.FileSystem(xrootd_endpoint)
+
+        # List files in the EOS directory
+        status, listing = client.dirlist(eos_directory)
+
+        # Filter files with .root extension
+        root_files = [entry['name'] for entry in listing['dirlist'] if entry['name'].endswith(".root")]
+
+        # Construct full file paths
+        file_paths = [f"{xrootd_endpoint}/{eos_directory}/{f}" for f in root_files]
+
+        return file_paths
 
     @property
     def processed_file_names(self):
