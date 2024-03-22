@@ -61,5 +61,9 @@ pip install pandas
 pip install requests
 pip install numpy
 pip install matplotlib
+
+pip install torch
+pip install fsspec-xrootd
+pip install xrootd
 ```
 
